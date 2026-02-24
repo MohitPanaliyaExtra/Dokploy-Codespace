@@ -1,0 +1,30 @@
+{
+  "name": "Dokploy Codespace",
+  "image": "ubuntu:22.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:1": {
+      "enableDockerInDocker": true
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "nodeVersion": "20"
+    }
+  },
+  "postCreateCommand": "cd dokploy-codespace-setup && ./deploy.sh",
+  "remoteEnv": {
+    "CODESPACES": "true"
+  },
+  "portsAttributes": {
+    "3000": {
+      "label": "Dokploy App",
+      "onAutoForward": "notify"
+    },
+    "5432": {
+      "label": "PostgreSQL",
+      "onAutoForward": "ignore"
+    },
+    "6379": {
+      "label": "Redis",
+      "onAutoForward": "ignore"
+    }
+  }
+}
