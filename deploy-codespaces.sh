@@ -24,7 +24,7 @@ if [ ! -d "dokploy" ]; then
 
     echo "Step 1.5: Applying GitHub Codespaces compatibility fixes..."
 
-    # Fix PostgreSQL connection to use container name instead of localhost in GitHub Codespaces
+    # Fix PostgreSQL connection to use 127.0.0.1 instead of dokploy-postgres in GitHub Codespaces
     cat > packages/server/src/db/constants.ts << 'EOF'
 import fs from "node:fs";
 
@@ -64,30 +64,25 @@ if (DATABASE_URL) {
 		`);
 	}
 
+	// Use localhost for codespaces/local development if HOST is not explicitly set
+	const dbHost = process.env.POSTGRES_HOST || (process.env.CODESPACES === "true" ? "127.0.0.1" : "localhost");
+
 	if (process.env.NODE_ENV === "production") {
 		dbUrl =
 			"postgres://dokploy:amukds4wi9001583845717ad2@dokploy-postgres:5432/dokploy";
 	} else {
-		if (process.env.CODESPACES === "true") {
-			dbUrl =
-				"postgres://dokploy:amukds4wi9001583845717ad2@dokploy-postgres:5432/dokploy";
-		} else {
-			dbUrl =
-				"postgres://dokploy:amukds4wi9001583845717ad2@localhost:5432/dokploy";
-		}
+		dbUrl =
+			`postgres://dokploy:amukds4wi9001583845717ad2@${dbHost}:5432/dokploy`;
 	}
 }
 EOF
 
-    # Fix Redis connection to use container name instead of localhost in GitHub Codespaces
+    # Fix Redis connection to use 127.0.0.1 in GitHub Codespaces
     cat > apps/dokploy/server/queues/redis-connection.ts << 'EOF'
 import type { ConnectionOptions } from "bullmq";
 
 export const redisConfig: ConnectionOptions = {
-	host:
-		process.env.NODE_ENV === "production" || process.env.CODESPACES === "true"
-			? process.env.REDIS_HOST || "dokploy-redis"
-			: "127.0.0.1",
+	host: process.env.REDIS_HOST || "127.0.0.1",
 };
 EOF
 else
@@ -96,7 +91,7 @@ else
 
     echo "Step 1.5: Applying GitHub Codespaces compatibility fixes..."
 
-    # Fix PostgreSQL connection to use container name instead of localhost in GitHub Codespaces
+    # Fix PostgreSQL connection to use 127.0.0.1 instead of dokploy-postgres in GitHub Codespaces
     cat > packages/server/src/db/constants.ts << 'EOF'
 import fs from "node:fs";
 
@@ -136,30 +131,25 @@ if (DATABASE_URL) {
 		`);
 	}
 
+	// Use localhost for codespaces/local development if HOST is not explicitly set
+	const dbHost = process.env.POSTGRES_HOST || (process.env.CODESPACES === "true" ? "127.0.0.1" : "localhost");
+
 	if (process.env.NODE_ENV === "production") {
 		dbUrl =
 			"postgres://dokploy:amukds4wi9001583845717ad2@dokploy-postgres:5432/dokploy";
 	} else {
-		if (process.env.CODESPACES === "true") {
-			dbUrl =
-				"postgres://dokploy:amukds4wi9001583845717ad2@dokploy-postgres:5432/dokploy";
-		} else {
-			dbUrl =
-				"postgres://dokploy:amukds4wi9001583845717ad2@localhost:5432/dokploy";
-		}
+		dbUrl =
+			`postgres://dokploy:amukds4wi9001583845717ad2@${dbHost}:5432/dokploy`;
 	}
 }
 EOF
 
-    # Fix Redis connection to use container name instead of localhost in GitHub Codespaces
+    # Fix Redis connection to use 127.0.0.1 in GitHub Codespaces
     cat > apps/dokploy/server/queues/redis-connection.ts << 'EOF'
 import type { ConnectionOptions } from "bullmq";
 
 export const redisConfig: ConnectionOptions = {
-	host:
-		process.env.NODE_ENV === "production" || process.env.CODESPACES === "true"
-			? process.env.REDIS_HOST || "dokploy-redis"
-			: "127.0.0.1",
+	host: process.env.REDIS_HOST || "127.0.0.1",
 };
 EOF
 fi
@@ -175,6 +165,34 @@ pnpm install
 
 echo "Step 4: Setting up application..."
 pnpm dokploy:setup
+
+echo "Step 5: Exposing Docker Swarm service ports..."
+# Check if docker service command exists and services are running
+if command -v docker &> /dev/null; then
+    # Expose Postgres port if service exists
+    if docker service ls --format '{{.Name}}' 2>/dev/null | grep -q "dokploy-postgres"; then
+        echo "Exposing PostgreSQL service port..."
+        docker service update --publish-add published=5432,target=5432 dokploy-postgres 2>/dev/null || true
+    fi
+    
+    # Expose Redis port if service exists
+    if docker service ls --format '{{.Name}}' 2>/dev/null | grep -q "dokploy-redis"; then
+        echo "Exposing Redis service port..."
+        docker service update --publish-add published=6379,target=6379 dokploy-redis 2>/dev/null || true
+    fi
+    
+    # Wait for services to be ready
+    echo "Waiting for database services to be ready..."
+    sleep 10
+fi
+
+echo "Step 6: Clearing Next.js cache..."
+rm -rf apps/dokploy/.next 2>/dev/null || true
+
+echo "Step 7: Running database migrations..."
+cd apps/dokploy
+pnpm run migration:run
+cd ../..
 
 echo
 echo "========================================="
